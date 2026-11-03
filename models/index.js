@@ -14,6 +14,8 @@ import { ReportPack } from './ReportPack.js';
 import { UserReport } from './UserReport.js';
 import { Blog } from './Blog.js';
 import { Admin } from './Admin.js';
+import { Faq } from './Faq.js';
+import { LegalPage } from './LegalPage.js';
 
 // User <-> Otp
 User.hasMany(Otp, { foreignKey: 'user_id', as: 'otps' });
@@ -87,7 +89,9 @@ export {
   QuestionPack,
   ReportPack,
   UserReport,
-  Blog
+  Blog,
+  Faq,
+  LegalPage
 };
 
 
