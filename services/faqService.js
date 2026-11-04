@@ -6,7 +6,7 @@ export const DEFAULT_FAQS = [
   {
     question: 'How accurate are Japaika Vedic astrology calculations?',
     answer:
-      'All birth charts and divisional charts (D-1 through D-60) on Japaika are computed using precision Swiss Ephemeris astronomical algorithms and the classical Lahiri (Chitrapaksha) Ayanamsa for sub-arcsecond planetary accuracy.',
+      'All birth charts and divisional charts (D-1 through D-60) on Japaika are computed using astronomical algorithms and the classical Lahiri (Chitrapaksha) Ayanamsa for planetary accuracy.',
     category: 'general',
     sort_order: 1,
     is_active: true
