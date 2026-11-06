@@ -92,7 +92,8 @@ export const getPacksCatalog = asyncHandler(async (req, res) => {
       originalPrice: basePrice,
       offerPrice,
       discountAmount,
-      defaultPromoCode
+      defaultPromoCode,
+      prices: typeof pack.prices === 'string' ? JSON.parse(pack.prices) : (pack.prices || {})
     };
   });
 
