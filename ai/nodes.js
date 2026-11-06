@@ -1,7 +1,11 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { SystemMessage, AIMessage, ToolMessage } from '@langchain/core/messages';
 import { createJyotishTools } from './tools.js';
-import { buildJyotishSystemPrompt, buildShastraSystemPrompt } from './prompts.js';
+import {
+  buildJyotishSystemPrompt,
+  buildShastraSystemPrompt,
+  normalizeQuestionTopic
+} from './prompts.js';
 import { AppError } from '../utils/appError.js';
 
 const MAX_TOOL_ROUNDS_PER_TURN = 2;
@@ -48,7 +52,7 @@ const countToolRoundsInCurrentTurn = (messages = []) => {
  * Safely parses JSON from the model's final output, with a graceful fallback
  * if the model wraps JSON in markdown code fences.
  */
-export const parseStructuredReading = (rawText, userName, engine) => {
+export const parseStructuredReading = (rawText, userName, engine, questionText = '') => {
   const firstName = (userName || 'Seeker').split(' ')[0];
 
   try {
@@ -60,6 +64,7 @@ export const parseStructuredReading = (rawText, userName, engine) => {
 
     const parsed = JSON.parse(cleaned);
     return {
+      topic: normalizeQuestionTopic(parsed.topic, questionText),
       openingThought:
         parsed.openingThought ||
         (engine === 'jyotish'
@@ -87,6 +92,7 @@ export const parseStructuredReading = (rawText, userName, engine) => {
       .filter(Boolean);
 
     return {
+      topic: normalizeQuestionTopic('', questionText),
       openingThought:
         engine === 'jyotish'
           ? `Reading your birth chart placements, ${firstName}...`
@@ -198,10 +204,21 @@ export const agentNode = async (state, config) => {
   }
 
   // Case B: The model generated the final structured JSON reading
+  let latestQuestion = '';
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    const msg = state.messages[i];
+    const msgType = typeof msg._getType === 'function' ? msg._getType() : msg.role;
+    if (msgType === 'human' || msgType === 'user') {
+      latestQuestion = typeof msg.content === 'string' ? msg.content : '';
+      break;
+    }
+  }
+
   const structuredReading = parseStructuredReading(
     fullJsonResponse,
     state.userName,
-    state.engine
+    state.engine,
+    latestQuestion
   );
 
   return {

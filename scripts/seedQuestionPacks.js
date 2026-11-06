@@ -10,8 +10,8 @@ export const INITIAL_QUESTION_PACKS = [
     tier: 'silver',
     credits: 7,
     prices: {
-      INR: { originalPrice: 1399, offerPrice: 699 },
-      USD: { originalPrice: 14.99, offerPrice: 7.99 }
+      INR: { basePrice: 1399 },
+      USD: { basePrice: 14.99 }
     },
     is_active: true,
     sort_order: 1
@@ -23,8 +23,8 @@ export const INITIAL_QUESTION_PACKS = [
     tier: 'gold',
     credits: 12,
     prices: {
-      INR: { originalPrice: 2399, offerPrice: 799 },
-      USD: { originalPrice: 29.99, offerPrice: 9.99 }
+      INR: { basePrice: 2399 },
+      USD: { basePrice: 29.99 }
     },
     is_active: true,
     sort_order: 2
@@ -36,8 +36,8 @@ export const INITIAL_QUESTION_PACKS = [
     tier: 'diamond',
     credits: 20,
     prices: {
-      INR: { originalPrice: 3999, offerPrice: 1199 },
-      USD: { originalPrice: 49.99, offerPrice: 14.99 }
+      INR: { basePrice: 3999 },
+      USD: { basePrice: 49.99 }
     },
     is_active: true,
     sort_order: 3

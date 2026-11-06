@@ -32,7 +32,7 @@ export const connectDB = async () => {
     console.log('MySQL Database connected successfully via Sequelize.');
     // In Phase 1 development, synchronize models if desired
     await sequelize.sync({ alter: true });
-    console.log('Database models synchronized.');
+    console.log('Database models synchronized successfully.');
   } catch (error) {
     console.error('Unable to connect to MySQL database:', error.message);
   }

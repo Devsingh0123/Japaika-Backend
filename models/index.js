@@ -73,6 +73,10 @@ UserReport.belongsTo(BirthChart, { foreignKey: 'chart_id', as: 'chart' });
 Admin.hasMany(Blog, { foreignKey: 'author_id', as: 'blogs' });
 Blog.belongsTo(Admin, { foreignKey: 'author_id', as: 'author' });
 
+// QuestionPack <-> Coupon (Default Offer)
+QuestionPack.belongsTo(Coupon, { foreignKey: 'default_coupon_id', as: 'default_coupon' });
+Coupon.hasMany(QuestionPack, { foreignKey: 'default_coupon_id', as: 'question_packs' });
+
 export {
   User,
   Admin,

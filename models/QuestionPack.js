@@ -59,6 +59,14 @@ export const QuestionPack = sequelize.define('QuestionPack', {
     allowNull: false,
     defaultValue: true
   },
+  default_coupon_id: {
+    type: DataTypes.CHAR(36),
+    allowNull: true,
+    references: {
+      model: 'coupons',
+      key: 'id'
+    }
+  },
   sort_order: {
     type: DataTypes.INTEGER,
     allowNull: false,
@@ -71,6 +79,7 @@ export const QuestionPack = sequelize.define('QuestionPack', {
   underscored: true,
   indexes: [
     { name: 'idx_question_packs_code', unique: true, fields: ['code'] },
-    { name: 'idx_question_packs_is_active', fields: ['is_active'] }
+    { name: 'idx_question_packs_is_active', fields: ['is_active'] },
+    { name: 'idx_question_packs_default_coupon', fields: ['default_coupon_id'] }
   ]
 });

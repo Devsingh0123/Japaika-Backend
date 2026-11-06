@@ -90,16 +90,24 @@ export const calculateOrderPricing = async ({
 
   let questionPack = null;
   if (isUuid) {
-    questionPack = await QuestionPack.findOne({ where: { id: packId, is_active: true } });
+    questionPack = await QuestionPack.findOne({
+      where: { id: packId, is_active: true },
+      include: [{ model: Coupon, as: 'default_coupon', required: false }]
+    });
   }
   if (!questionPack) {
-    questionPack = await QuestionPack.findOne({ where: { code: packId, is_active: true } });
+    questionPack = await QuestionPack.findOne({
+      where: { code: packId, is_active: true },
+      include: [{ model: Coupon, as: 'default_coupon', required: false }]
+    });
   }
 
   if (questionPack) {
-    const prices = questionPack.prices || {};
+    const prices = typeof questionPack.prices === 'string' ? JSON.parse(questionPack.prices) : (questionPack.prices || {});
     const priceTier = prices[normalizedCurrency];
-    if (!priceTier || (priceTier.offerPrice === undefined && priceTier.originalPrice === undefined)) {
+    const basePrice = Number(priceTier?.basePrice !== undefined ? priceTier.basePrice : (priceTier?.originalPrice ?? priceTier?.offerPrice));
+
+    if (isNaN(basePrice) || basePrice <= 0) {
       throw new AppError(`Pricing for currency "${normalizedCurrency}" is not configured for pack "${questionPack.title || questionPack.name}".`, 400);
     }
 
@@ -110,8 +118,10 @@ export const calculateOrderPricing = async ({
       itemTitle: questionPack.title || `${questionPack.name} Question Pack (${questionPack.credits} Questions)`,
       tier: questionPack.tier,
       credits: questionPack.credits,
-      originalPrice: Number(priceTier.originalPrice ?? priceTier.offerPrice),
-      offerPrice: Number(priceTier.offerPrice ?? priceTier.originalPrice)
+      originalPrice: basePrice,
+      offerPrice: basePrice,
+      defaultCoupon: questionPack.default_coupon,
+      allPrices: prices
     };
   } else {
     // 2. Look up in ReportPack model next (by UUID or code e.g. report_silver_1)
@@ -127,7 +137,7 @@ export const calculateOrderPricing = async ({
       throw new AppError(`Invalid packId: "${packId}".`, 400);
     }
 
-    const prices = reportPack.prices || {};
+    const prices = typeof reportPack.prices === 'string' ? JSON.parse(reportPack.prices) : (reportPack.prices || {});
     const priceTier = prices[normalizedCurrency];
     if (!priceTier || (priceTier.offerPrice === undefined && priceTier.originalPrice === undefined)) {
       throw new AppError(`Pricing for currency "${normalizedCurrency}" is not configured for pack "${reportPack.title || reportPack.name}".`, 400);
@@ -141,7 +151,9 @@ export const calculateOrderPricing = async ({
       tier: reportPack.tier,
       credits: reportPack.credits,
       originalPrice: Number(priceTier.originalPrice ?? priceTier.offerPrice),
-      offerPrice: Number(priceTier.offerPrice ?? priceTier.originalPrice)
+      offerPrice: Number(priceTier.offerPrice ?? priceTier.originalPrice),
+      defaultCoupon: null,
+      allPrices: prices
     };
   }
 
@@ -149,6 +161,8 @@ export const calculateOrderPricing = async ({
   let finalTotal = item.offerPrice;
   let appliedCoupon = null;
 
+  // Determine coupon: explicitly passed couponCode takes precedence; otherwise auto-apply default_coupon if questions pack
+  let couponToApply = null;
   if (couponCode) {
     const code = String(couponCode).trim().toUpperCase();
     const coupon = await Coupon.findOne({ where: { code, is_active: true } });
@@ -176,17 +190,49 @@ export const calculateOrderPricing = async ({
       throw new AppError(`Coupon "${code}" is not valid for ${item.itemTitle}.`, 400);
     }
 
+    couponToApply = coupon;
     appliedCoupon = code;
-    if (coupon.discount_type === 'percentage') {
-      finalTotal = Number((item.offerPrice * (1 - Number(coupon.discount_value) / 100)).toFixed(2));
-    } else if (coupon.discount_type === 'flat') {
-      finalTotal = Math.max(0, Number((item.offerPrice - Number(coupon.discount_value)).toFixed(2)));
-    } else {
-      finalTotal = item.offerPrice;
+  } else if (item.itemType === 'questions' && item.defaultCoupon) {
+    const defCoupon = item.defaultCoupon;
+    const isDefValid =
+      defCoupon.is_active &&
+      (!defCoupon.expires_at || new Date(defCoupon.expires_at) > new Date()) &&
+      (defCoupon.max_uses === null || defCoupon.used_count < defCoupon.max_uses);
+
+    if (isDefValid) {
+      couponToApply = defCoupon;
+      appliedCoupon = defCoupon.code;
     }
   }
 
-  const discountAmount = Number((subtotal - finalTotal).toFixed(2));
+  if (couponToApply) {
+    const discountVal = Number(couponToApply.discount_value) || 0;
+    const baseTarget = item.itemType === 'questions' ? subtotal : item.offerPrice;
+
+    if (couponToApply.discount_type === 'percentage') {
+      const discount = Math.round(baseTarget * (discountVal / 100) * 100) / 100;
+      finalTotal = Math.max(0, Math.round((baseTarget - discount) * 100) / 100);
+    } else if (couponToApply.discount_type === 'flat') {
+      let discount = discountVal;
+      // Proportional conversion for USD when flat discount is defined in INR
+      if (normalizedCurrency === 'USD' && discountVal > baseTarget) {
+        const inrBase = Number(item.allPrices?.INR?.basePrice ?? item.allPrices?.INR?.originalPrice ?? 0);
+        if (inrBase > 0) {
+          const ratio = Math.min(1, discountVal / inrBase);
+          discount = Math.round(baseTarget * ratio * 100) / 100;
+        } else {
+          discount = Math.min(baseTarget, discountVal);
+        }
+      } else {
+        discount = Math.min(baseTarget, discountVal);
+      }
+      finalTotal = Math.max(0, Math.round((baseTarget - discount) * 100) / 100);
+    } else {
+      finalTotal = baseTarget;
+    }
+  }
+
+  const discountAmount = Number(Math.max(0, subtotal - finalTotal).toFixed(2));
   const gst = computeGstBreakdown(finalTotal, normalizedCurrency, billingState);
 
   return {

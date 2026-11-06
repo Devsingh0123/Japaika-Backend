@@ -25,9 +25,16 @@ export const getPacksCatalog = asyncHandler(async (req, res) => {
     throw new AppError(`Unsupported currency "${req.query.currency}". Supported currencies are: ${SUPPORTED_CURRENCIES.join(', ')}.`, 400);
   }
 
-  // Fetch all active question packs dynamically from DB
+  // Fetch all active question packs dynamically from DB, including linked default offer coupon
   const activeQuestionPacks = await QuestionPack.findAll({
     where: { is_active: true },
+    include: [
+      {
+        model: Coupon,
+        as: 'default_coupon',
+        required: false
+      }
+    ],
     order: [
       ['sort_order', 'ASC'],
       ['credits', 'ASC']
@@ -35,10 +42,42 @@ export const getPacksCatalog = asyncHandler(async (req, res) => {
   });
 
   const questionPacks = activeQuestionPacks.map((pack) => {
-    const prices = pack.prices || {};
+    const prices = typeof pack.prices === 'string' ? JSON.parse(pack.prices) : (pack.prices || {});
     const priceTier = prices[currency] || {};
-    const originalPrice = Number(priceTier.originalPrice ?? priceTier.offerPrice ?? 0);
-    const offerPrice = Number(priceTier.offerPrice ?? originalPrice ?? 0);
+    const basePrice = Number(priceTier.basePrice !== undefined ? priceTier.basePrice : (priceTier.originalPrice ?? priceTier.offerPrice ?? 0));
+
+    let discountAmount = 0;
+    let defaultPromoCode = null;
+    const coupon = pack.default_coupon;
+
+    const isCouponValid =
+      coupon &&
+      coupon.is_active &&
+      (!coupon.expires_at || new Date(coupon.expires_at) > new Date());
+
+    if (isCouponValid) {
+      defaultPromoCode = coupon.code;
+      const discountVal = Number(coupon.discount_value) || 0;
+
+      if (coupon.discount_type === 'percentage') {
+        discountAmount = Math.round(basePrice * (discountVal / 100) * 100) / 100;
+      } else if (coupon.discount_type === 'flat') {
+        if (currency === 'USD' && discountVal > basePrice) {
+          const inrPriceTier = prices['INR'] || {};
+          const inrBase = Number(inrPriceTier.basePrice !== undefined ? inrPriceTier.basePrice : (inrPriceTier.originalPrice ?? 0));
+          if (inrBase > 0) {
+            const ratio = Math.min(1, discountVal / inrBase);
+            discountAmount = Math.round(basePrice * ratio * 100) / 100;
+          } else {
+            discountAmount = Math.min(basePrice, discountVal);
+          }
+        } else {
+          discountAmount = Math.min(basePrice, discountVal);
+        }
+      }
+    }
+
+    const offerPrice = Math.max(0, Math.round((basePrice - discountAmount) * 100) / 100);
 
     return {
       id: pack.code,
@@ -50,8 +89,10 @@ export const getPacksCatalog = asyncHandler(async (req, res) => {
       productType: 'questions',
       credits: pack.credits,
       currency,
-      originalPrice,
-      offerPrice
+      originalPrice: basePrice,
+      offerPrice,
+      discountAmount,
+      defaultPromoCode
     };
   });
 
@@ -88,7 +129,7 @@ export const getPacksCatalog = asyncHandler(async (req, res) => {
   });
 
   const coupons = await Coupon.findAll({
-    where: { is_active: true },
+    where: { is_active: true, is_hidden: false },
     order: [['created_at', 'ASC']]
   });
 

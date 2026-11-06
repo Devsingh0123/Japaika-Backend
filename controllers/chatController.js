@@ -1,10 +1,17 @@
+import { Op } from 'sequelize';
 import {
   ChatThread,
   ChatMessage,
   BirthDetail,
   BirthChart,
+  Coupon,
+  QuestionPack,
 } from "../models/index.js";
 import { chatService } from "../services/chatService.js";
+import {
+  classifyQuestionTopicFallback,
+  normalizeQuestionTopic,
+} from "../ai/prompts.js";
 import { AppError } from "../utils/appError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
@@ -21,6 +28,85 @@ const ZERO_CREDIT_OFFER = {
   questionsCount: 12,
   originalPrice: "$29.99",
   discountedPrice: "$9.99",
+};
+
+/**
+ * Dynamically resolves the special promotional offer shown inside Jyotish chat
+ * when a user's question quota reaches 0. Reads active coupon marked with is_special_offer = true.
+ */
+export const resolveZeroCreditOffer = async (currency = 'INR') => {
+  const normCurrency = String(currency || 'INR').trim().toUpperCase();
+  const symbol = normCurrency === 'USD' ? '$' : '₹';
+
+  try {
+    const coupon = await Coupon.findOne({
+      where: {
+        is_active: true,
+        is_special_offer: true,
+      },
+      order: [['updated_at', 'DESC']],
+    });
+
+    if (!coupon) {
+      return ZERO_CREDIT_OFFER;
+    }
+
+    const applicable = Array.isArray(coupon.applicable_products)
+      ? coupon.applicable_products
+      : JSON.parse(coupon.applicable_products || '[]');
+
+    const targetPackCode = applicable.length > 0 ? applicable[0] : 'pack_gold_12';
+
+    const pack = await QuestionPack.findOne({
+      where: {
+        [Op.or]: [{ code: targetPackCode }, { id: targetPackCode }],
+        is_active: true,
+      },
+    });
+
+    if (!pack) {
+      return ZERO_CREDIT_OFFER;
+    }
+
+    const prices = typeof pack.prices === 'string' ? JSON.parse(pack.prices) : (pack.prices || {});
+    const priceTier = prices[normCurrency] || prices['INR'] || {};
+    const basePrice = Number(priceTier.basePrice !== undefined ? priceTier.basePrice : (priceTier.originalPrice ?? 2399));
+
+    let discountVal = Number(coupon.discount_value) || 0;
+    let discountPercent = 0;
+    let discountAmount = 0;
+
+    if (coupon.discount_type === 'percentage') {
+      discountPercent = Math.round(discountVal);
+      discountAmount = Math.round(basePrice * (discountVal / 100) * 100) / 100;
+    } else {
+      // Flat discount
+      if (normCurrency === 'USD' && discountVal > basePrice) {
+        const inrBase = Number(prices['INR']?.basePrice ?? 2399);
+        const ratio = inrBase > 0 ? Math.min(1, discountVal / inrBase) : 0.67;
+        discountPercent = Math.round(ratio * 100);
+        discountAmount = Math.round(basePrice * ratio * 100) / 100;
+      } else {
+        discountPercent = basePrice > 0 ? Math.round((discountVal / basePrice) * 100) : 0;
+        discountAmount = Math.min(basePrice, discountVal);
+      }
+    }
+
+    const discountedPrice = Math.max(0, Math.round((basePrice - discountAmount) * 100) / 100);
+
+    return {
+      title: `Get ${pack.credits} questions at ${discountPercent}% discount`,
+      description: `Your question balance is ZERO. Buy ${pack.credits} questions at ${discountPercent}% off. Promo code: ${coupon.code}`,
+      promoCode: coupon.code,
+      discountPercent,
+      questionsCount: pack.credits,
+      originalPrice: `${symbol}${basePrice}`,
+      discountedPrice: `${symbol}${discountedPrice}`,
+    };
+  } catch (err) {
+    console.error('Error resolving zero-credit offer:', err);
+    return ZERO_CREDIT_OFFER;
+  }
 };
 
 /**
@@ -76,13 +162,14 @@ export const consultJyotish = asyncHandler(async (req, res, next) => {
 
   // 1. Check credit balance before starting consultation
   if (user.credit_balance <= 0) {
+    const offer = await resolveZeroCreditOffer('INR');
     return res.status(402).json({
       success: false,
       message:
         "Your question balance is empty. Please purchase a question pack to consult Jyotish.",
       data: {
         creditsRemaining: 0,
-        offer: ZERO_CREDIT_OFFER,
+        offer,
       },
     });
   }
@@ -142,11 +229,13 @@ export const consultJyotish = asyncHandler(async (req, res, next) => {
     });
   }
 
-  // 4. Persist the user's question in `chat_messages`
-  await ChatMessage.create({
+  // 4. Persist the user's question in `chat_messages` (topic stored ONLY on role='user')
+  const initialTopic = classifyQuestionTopicFallback(question);
+  const userMsg = await ChatMessage.create({
     thread_id: thread.id,
     role: "user",
     content: question,
+    topic: initialTopic,
     tokens_used: 0,
     credits_debited: 0,
   });
@@ -192,7 +281,13 @@ export const consultJyotish = asyncHandler(async (req, res, next) => {
     user.credit_balance = Math.max(0, user.credit_balance - 1);
     await user.save();
 
-    const offer = user.credit_balance === 0 ? ZERO_CREDIT_OFFER : null;
+    const finalTopic = normalizeQuestionTopic(reading.topic, question);
+    if (userMsg.topic !== finalTopic) {
+      userMsg.topic = finalTopic;
+      await userMsg.save();
+    }
+
+    const offer = user.credit_balance === 0 ? await resolveZeroCreditOffer('INR') : null;
 
     const structuredPayload = {
       openingThought: reading.openingThought,
@@ -203,11 +298,12 @@ export const consultJyotish = asyncHandler(async (req, res, next) => {
       offer,
     };
 
-    // 8. Save assistant reading to `chat_messages` and touch thread timestamp
+    // 8. Save assistant reading to `chat_messages` (topic is NULL on assistant rows)
     const assistantMsg = await ChatMessage.create({
       thread_id: thread.id,
       role: "assistant",
       content: reading.paragraphs.join("\n\n"),
+      topic: null,
       structured_data: structuredPayload,
       tokens_used: tokensUsed,
       credits_debited: 1,
@@ -222,6 +318,7 @@ export const consultJyotish = asyncHandler(async (req, res, next) => {
       threadId: thread.id,
       engine: "jyotish",
       question,
+      topic: finalTopic,
       createdAt: assistantMsg.created_at,
       ...structuredPayload,
       feedback: null,
@@ -308,11 +405,13 @@ export const consultShastra = asyncHandler(async (req, res, next) => {
     });
   }
 
-  // 2. Save user question in `chat_messages`
-  await ChatMessage.create({
+  // 2. Save user question in `chat_messages` (topic stored ONLY on role='user')
+  const initialTopic = classifyQuestionTopicFallback(question);
+  const userMsg = await ChatMessage.create({
     thread_id: thread.id,
     role: "user",
     content: question,
+    topic: initialTopic,
     tokens_used: 0,
     credits_debited: 0,
   });
@@ -342,6 +441,12 @@ export const consultShastra = asyncHandler(async (req, res, next) => {
       },
     });
 
+    const finalTopic = normalizeQuestionTopic(reading.topic, question);
+    if (userMsg.topic !== finalTopic) {
+      userMsg.topic = finalTopic;
+      await userMsg.save();
+    }
+
     const structuredPayload = {
       openingThought: reading.openingThought,
       thinkingSteps: reading.thinkingSteps,
@@ -351,11 +456,12 @@ export const consultShastra = asyncHandler(async (req, res, next) => {
       offer: null,
     };
 
-    // 4. Save assistant answer in `chat_messages`
+    // 4. Save assistant answer in `chat_messages` (topic is NULL on assistant rows)
     const assistantMsg = await ChatMessage.create({
       thread_id: thread.id,
       role: "assistant",
       content: reading.paragraphs.join("\n\n"),
+      topic: null,
       structured_data: structuredPayload,
       tokens_used: tokensUsed,
       credits_debited: 0,
@@ -369,6 +475,7 @@ export const consultShastra = asyncHandler(async (req, res, next) => {
       threadId: thread.id,
       engine: "shastra",
       question,
+      topic: finalTopic,
       createdAt: assistantMsg.created_at,
       ...structuredPayload,
       feedback: null,
@@ -433,6 +540,7 @@ export const getUserThreads = asyncHandler(async (req, res) => {
           "id",
           "role",
           "content",
+          "topic",
           "structured_data",
           "feedback",
           "created_at",
@@ -500,6 +608,7 @@ export const getThreadById = asyncHandler(async (req, res, next) => {
         threadId: thread.id,
         engine: thread.engine,
         question: prevUserMsg ? prevUserMsg.content : thread.title,
+        topic: prevUserMsg?.topic || "General",
         createdAt: msg.created_at,
         openingThought: structured.openingThought || "",
         thinkingSteps: structured.thinkingSteps || [],
@@ -527,6 +636,7 @@ export const getThreadById = asyncHandler(async (req, res, next) => {
         id: m.id,
         role: m.role,
         content: m.content,
+        topic: m.role === "user" ? m.topic || "General" : null,
         structuredData: m.structured_data,
         feedback: m.feedback,
         tokensUsed: m.tokens_used,

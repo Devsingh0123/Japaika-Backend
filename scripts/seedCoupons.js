@@ -5,35 +5,43 @@ import { Coupon } from '../models/Coupon.js';
 export const INITIAL_COUPONS = [
   {
     code: 'QUICKGOLD',
-    description: '67% OFF on Gold 12-Question Pack',
-    discount_type: 'pack_offer',
+    description: 'Flat ₹67 OFF on Gold Pack',
+    discount_type: 'flat',
     discount_value: 67.00,
     applicable_products: ['pack_gold_12'],
-    is_active: true
+    is_active: true,
+    is_hidden: false,
+    is_special_offer: true
   },
   {
     code: 'GOLDNOW',
-    description: '67% OFF on Gold 12-Question Pack',
-    discount_type: 'pack_offer',
-    discount_value: 67.00,
+    description: 'Flat ₹1600 OFF on Gold 12-Question Pack',
+    discount_type: 'flat',
+    discount_value: 1600.00,
     applicable_products: ['pack_gold_12'],
-    is_active: true
+    is_active: true,
+    is_hidden: false,
+    is_special_offer: true
   },
   {
     code: 'ASKMAX',
-    description: 'Discount on Silver & Diamond Question Packs',
-    discount_type: 'pack_offer',
-    discount_value: 50.00,
+    description: 'Flat ₹700 OFF on Silver Question Pack',
+    discount_type: 'flat',
+    discount_value: 700.00,
     applicable_products: ['pack_silver_7', 'pack_diamond_20'],
-    is_active: true
+    is_active: true,
+    is_hidden: false,
+    is_special_offer: false
   },
   {
     code: 'VAULT',
-    description: 'Discount on All Report Packs',
-    discount_type: 'pack_offer',
-    discount_value: 60.00,
+    description: 'Flat ₹1000 OFF on Report Packs',
+    discount_type: 'flat',
+    discount_value: 1000.00,
     applicable_products: ['report_silver_1', 'report_gold_2', 'report_diamond_4'],
-    is_active: true
+    is_active: true,
+    is_hidden: false,
+    is_special_offer: false
   }
 ];
 
@@ -60,7 +68,8 @@ export async function seedCoupons() {
           discount_type: coupon.discount_type,
           discount_value: coupon.discount_value,
           applicable_products: coupon.applicable_products,
-          is_active: coupon.is_active
+          is_active: coupon.is_active,
+          is_hidden: coupon.is_hidden ?? false
         });
         console.log(`Updated coupon: ${coupon.code}`);
       }

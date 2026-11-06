@@ -34,6 +34,13 @@ export const ChatMessage = sequelize.define('ChatMessage', {
     type: DataTypes.TEXT,
     allowNull: false
   },
+  // Classified topic of the user's question ('Career', 'Marriage', 'Love', 'Wealth', 'Health', 'General')
+  // Stored ONLY on role='user' rows; NULL on role='assistant' rows.
+  topic: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    defaultValue: null
+  },
   // Rich UI payload for assistant messages (openingThought, thinkingSteps, paragraphs, astrologyBehind, suggestedQuestions, offer)
   structured_data: {
     type: DataTypes.JSON,
@@ -63,6 +70,7 @@ export const ChatMessage = sequelize.define('ChatMessage', {
   paranoid: true,
   underscored: true,
   indexes: [
-    { fields: ['thread_id', 'created_at'] }
+    { fields: ['thread_id', 'created_at'] },
+    { name: 'idx_chat_messages_topic', fields: ['role', 'topic'] }
   ]
 });

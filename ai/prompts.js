@@ -1,6 +1,82 @@
 import { normalizeHoroscopeData } from './tools.js';
 
 /**
+ * Canonical 6-category taxonomy for user question analytics.
+ * Anything outside the first 5 categories MUST be classified as 'General'.
+ */
+export const QUESTION_TOPICS = [
+  'Career',
+  'Marriage',
+  'Love',
+  'Wealth',
+  'Health',
+  'General'
+];
+
+const TOPIC_LOOKUP = Object.fromEntries(
+  QUESTION_TOPICS.map((t) => [t.toLowerCase(), t])
+);
+
+const TOPIC_PATTERNS = [
+  {
+    topic: 'Marriage',
+    regex:
+      /\b(marri(?:age|ed)|marry|spouse|husband|wife|wedding|shaadi|shadi|vivah|kundli\s*milan|divorce|in-laws|manglik|darakaraka|navamsa|7th\s*house)\b|विवाह|शादी|पति|पत्नी|जीवनसाथी/i
+  },
+  {
+    topic: 'Love',
+    regex:
+      /\b(love|romance|romantic|boyfriend|girlfriend|dating|crush|breakup|break-up|patch\s*up|ex-partner|relationship|affair|pyaar|prem|mohabbat)\b|प्यार|प्रेम|रिश्ता|ब्रेकअप/i
+  },
+  {
+    topic: 'Career',
+    regex:
+      /\b(career|job|business|promotion|profession|workplace|boss|office|startup|company|employment|unemployed|interview|exam|govt\s*job|government\s*job|ias|upsc|naukri|vyapar|dasamsa|10th\s*house)\b|करियर|नौकरी|व्यापार|व्यवसाय|प्रमोशन|परीक्षा/i
+  },
+  {
+    topic: 'Wealth',
+    regex:
+      /\b(wealth|money|finance|financial|income|salary|rich|millionaire|billionaire|debt|loan|investment|stock|trading|property|real\s*estate|dhana|paisa|dhan|lakshmi)\b|धन|पैसा|संपत्ति|कर्ज|आर्थिक|कमाई/i
+  },
+  {
+    topic: 'Health',
+    regex:
+      /\b(health|illness|disease|sick|hospital|surgery|medical|mental\s*health|anxiety|depression|stress|sleep|healing|recovery|longevity|bimari|swasthya)\b|स्वास्थ्य|बीमारी|सेहत|मानसिक/i
+  }
+];
+
+/**
+ * Deterministic keyword fallback classifier across English, Hinglish, and Hindi.
+ * Strictly returns 'General' if the question does not match one of the 5 specific topics.
+ */
+export const classifyQuestionTopicFallback = (questionText = '') => {
+  const text = String(questionText || '').trim();
+  if (!text) return 'General';
+
+  for (const { topic, regex } of TOPIC_PATTERNS) {
+    if (regex.test(text)) {
+      return topic;
+    }
+  }
+  return 'General';
+};
+
+/**
+ * Normalizes any LLM-emitted topic string into one of the 6 canonical QUESTION_TOPICS.
+ * Anything outside Career, Marriage, Love, Wealth, or Health strictly resolves to 'General'.
+ */
+export const normalizeQuestionTopic = (rawTopic = '', questionText = '') => {
+  const cleaned = String(rawTopic || '').trim().toLowerCase();
+  if (cleaned && TOPIC_LOOKUP[cleaned]) {
+    if (TOPIC_LOOKUP[cleaned] === 'General' && questionText) {
+      return classifyQuestionTopicFallback(questionText);
+    }
+    return TOPIC_LOOKUP[cleaned];
+  }
+  return classifyQuestionTopicFallback(questionText);
+};
+
+/**
  * Builds a lightweight 5-line user identity & core Lagna/Moon summary.
  * Full divisional charts, dashas, yogas, strengths, and transits are fetched
  * on-demand by Jyotish via tool calls rather than dumped into the prompt.
@@ -88,6 +164,7 @@ ${userSummary}
 ### REQUIRED FINAL JSON OUTPUT FORMAT
 Respond ONLY with a valid JSON object matching this exact schema (no markdown code fences around the JSON):
 {
+  "topic": "Classify the user's question into ONE of: Career | Marriage | Love | Wealth | Health | General. Anything outside Career, Marriage, Love, Wealth, or Health MUST be General.",
   "openingThought": "A 1-sentence italicized opening observation addressing ${firstName} and naming the primary house/planet governing their question (or a warm greeting/clarification if greeting or off-topic).",
   "thinkingSteps": [
     "Short status badge 1 describing what you inspected (e.g., 'Examined D-1 Rasi & D-9 Navamsa placements')",
@@ -150,6 +227,7 @@ export const buildShastraSystemPrompt = () => {
 ### REQUIRED JSON OUTPUT FORMAT
 Respond ONLY with a valid JSON object matching this exact schema (no markdown code fences around the JSON):
 {
+  "topic": "Classify the user's question into ONE of: Career | Marriage | Love | Wealth | Health | General. Anything outside Career, Marriage, Love, Wealth, or Health MUST be General.",
   "openingThought": "A 1-sentence scholarly opening note describing the classical principle being examined.",
   "thinkingSteps": [
     "Short status badge 1 (e.g., 'Referencing Brihat Parashara Hora Shastra')",
