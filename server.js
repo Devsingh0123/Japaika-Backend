@@ -13,6 +13,7 @@ import reportRoutes from './routes/reportRoutes.js';
 import blogRoutes from './routes/blogRoutes.js';
 import faqRoutes from './routes/faqRoutes.js';
 import legalRoutes from './routes/legalRoutes.js';
+import doshaRoutes from './routes/doshaRoutes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 dotenv.config();
@@ -64,6 +65,7 @@ app.use('/api/v1/blogs', blogRoutes);
 app.use('/api/v1/faqs', faqRoutes);
 app.use('/api/v1/legal-pages', legalRoutes);
 app.use('/api/v1/legal', legalRoutes);
+app.use('/api/v1/doshas', doshaRoutes);
 
 // Unhandled Route Handler
 app.all('*', (req, res) => {
