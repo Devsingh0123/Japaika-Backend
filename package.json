@@ -8,7 +8,8 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "question-pack": "node scripts/seedQuestionPacks.js",
-    "coupons": "node scripts/seedCoupons.js"
+    "coupons": "node scripts/seedCoupons.js",
+    "doshas": "node scripts/seedDoshas.js"
   },
   "dependencies": {
     "@langchain/core": "^1.2.18",
