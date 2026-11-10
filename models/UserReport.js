@@ -1,6 +1,20 @@
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../config/db.js';
 
+const parseJsonColumn = (raw, fallback = null) => {
+  if (raw === undefined || raw === null) {
+    return raw;
+  }
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return fallback;
+    }
+  }
+  return raw;
+};
+
 export const UserReport = sequelize.define('UserReport', {
   id: {
     type: DataTypes.UUID,
@@ -61,22 +75,34 @@ export const UserReport = sequelize.define('UserReport', {
   // Executive overview & key takeaways
   summary: {
     type: DataTypes.JSON,
-    allowNull: true
+    allowNull: true,
+    get() {
+      return parseJsonColumn(this.getDataValue('summary'), null);
+    }
   },
   // Structured list of chapters / table of contents
   table_of_contents: {
     type: DataTypes.JSON,
-    allowNull: true
+    allowNull: true,
+    get() {
+      return parseJsonColumn(this.getDataValue('table_of_contents'), []);
+    }
   },
   // Array of full 8-10 long-form chapters
   sections: {
     type: DataTypes.JSON,
-    allowNull: true
+    allowNull: true,
+    get() {
+      return parseJsonColumn(this.getDataValue('sections'), []);
+    }
   },
   // Snapshot of astrological data used (D-1, D-9/D-10, Dashas, Yogas, Karakas)
   astrological_factors: {
     type: DataTypes.JSON,
-    allowNull: true
+    allowNull: true,
+    get() {
+      return parseJsonColumn(this.getDataValue('astrological_factors'), null);
+    }
   },
   pdf_url: {
     type: DataTypes.STRING(255),

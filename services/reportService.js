@@ -199,7 +199,7 @@ export const generateReportInBackground = async (reportId) => {
     await report.save();
 
     const chartData = report.chart?.chart_data;
-    const astroSummary = extractAstrologicalSummary(chartData, report.report_type);
+    const astroSummary = extractAstrologicalSummary(chartData, report.report_type, report.chart);
 
     const blueprintBatches = REPORT_BLUEPRINTS[report.report_type] || REPORT_BLUEPRINTS.career;
 

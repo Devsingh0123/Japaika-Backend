@@ -76,7 +76,21 @@ export const BirthChart = sequelize.define('BirthChart', {
   },
   chart_data: {
     type: DataTypes.JSON,
-    allowNull: false
+    allowNull: false,
+    get() {
+      const raw = this.getDataValue('chart_data');
+      if (raw === undefined || raw === null) {
+        return raw;
+      }
+      if (typeof raw === 'string') {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return raw;
+        }
+      }
+      return raw;
+    }
   }
 }, {
   tableName: 'birth_charts',

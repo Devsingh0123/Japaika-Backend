@@ -7,20 +7,62 @@ const ZODIAC_SIGNS = [
   'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces'
 ];
 
+const stripHtmlTags = (value) => {
+  if (typeof value !== 'string') return value;
+  return value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+};
+
+const normalizePlanetName = (name) =>
+  String(name || '')
+    .replace(/Raagu/gi, 'Rahu')
+    .replace(/Kethu/gi, 'Ketu');
+
+const getDivisionalChart = (horoscope, vargaCode) => {
+  const divisionalCharts = horoscope?.divisional_charts || {};
+  const normalized = String(vargaCode || 'D-1').trim().toUpperCase();
+  const compact = normalized.replace('-', '');
+
+  const chartKey = Object.keys(divisionalCharts).find((key) => {
+    const upper = key.toUpperCase();
+    return (
+      upper === normalized ||
+      upper === compact ||
+      upper.startsWith(`${normalized}_`) ||
+      upper.startsWith(`${compact}_`)
+    );
+  });
+
+  return chartKey && divisionalCharts[chartKey] ? divisionalCharts[chartKey] : {};
+};
+
 /**
  * Extracts key astrological factors from raw chart data for report generation.
  */
-export const extractAstrologicalSummary = (chartData, reportType = 'career') => {
+export const extractAstrologicalSummary = (chartData, reportType = 'career', chartMeta = {}) => {
   const horoscope = normalizeHoroscopeData(chartData);
 
-  // 1. Core Natal Points
-  const ascendantSign = horoscope.ascendant_sign || horoscope.Ascendant?.sign || 'Aries';
-  const moonSign = horoscope.moon_sign || horoscope.Moon?.sign || 'Taurus';
-  const sunSign = horoscope.sun_sign || horoscope.Sun?.sign || 'Leo';
-
-  // 2. Natal Placements (D-1)
-  const d1Chart = horoscope.divisional_charts?.D1 || horoscope.divisional_charts?.['D-1'] || {};
+  // 1. Natal Placements (D-1 Rasi) & Core Natal Points
+  const d1Chart = getDivisionalChart(horoscope, 'D-1');
   const nakshatraMap = horoscope.nakshatra_pada || {};
+
+  const ascendantSign =
+    d1Chart?.Ascendant?.sign ||
+    chartMeta?.ascendant_sign ||
+    horoscope.ascendant_sign ||
+    horoscope.Ascendant?.sign ||
+    'Aries';
+  const moonSign =
+    d1Chart?.Moon?.sign ||
+    chartMeta?.moon_sign ||
+    horoscope.moon_sign ||
+    horoscope.Moon?.sign ||
+    'Taurus';
+  const sunSign =
+    d1Chart?.Sun?.sign ||
+    chartMeta?.sun_sign ||
+    horoscope.sun_sign ||
+    horoscope.Sun?.sign ||
+    'Leo';
 
   const natalPlacements = {};
   const bodies = ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn', 'Rahu', 'Ketu'];
@@ -38,10 +80,10 @@ export const extractAstrologicalSummary = (chartData, reportType = 'career') => 
     }
   }
 
-  // 3. Relevant Divisional Charts (D-10 Dasamsa for career, D-9 Navamsa for marriage, D-2 Hora for wealth)
-  const d10Chart = horoscope.divisional_charts?.D10 || horoscope.divisional_charts?.['D-10'] || {};
-  const d9Chart = horoscope.divisional_charts?.D9 || horoscope.divisional_charts?.['D-9'] || {};
-  const d2Chart = horoscope.divisional_charts?.D2 || horoscope.divisional_charts?.['D-2'] || {};
+  // 2. Relevant Divisional Charts (D-10 Dasamsa for career, D-9 Navamsa for marriage, D-2 Hora for wealth)
+  const d10Chart = getDivisionalChart(horoscope, 'D-10');
+  const d9Chart = getDivisionalChart(horoscope, 'D-9');
+  const d2Chart = getDivisionalChart(horoscope, 'D-2');
 
   const d10Placements = {};
   const d10Asc = d10Chart.Ascendant?.sign || ascendantSign;
@@ -65,26 +107,78 @@ export const extractAstrologicalSummary = (chartData, reportType = 'career') => 
     }
   }
 
-  // 4. Dashas (Current & Next 5 Years)
+  const d2Placements = {};
+  const d2Asc = d2Chart.Ascendant?.sign || ascendantSign;
+  for (const b of bodies) {
+    if (d2Chart[b]?.sign) {
+      d2Placements[b] = {
+        sign: d2Chart[b].sign,
+        house: calculateWholeSignHouse(d2Asc, d2Chart[b].sign)
+      };
+    }
+  }
+
+  // 3. Dashas (Current & Next 5 Years Antardasha / Pratyantardasha Timeline)
   const vimsottariList =
     horoscope.graha_dashas?.vimsottari ||
     horoscope.dashas?.vimsottari ||
     [];
 
   const now = new Date();
-  const currentIndex = vimsottariList.findIndex(([_, endDateStr]) => new Date(endDateStr) > now);
+  const currentIndex = Array.isArray(vimsottariList)
+    ? vimsottariList.findIndex(([_, endDateStr]) => new Date(endDateStr) > now)
+    : -1;
   const activeDasha = currentIndex !== -1 ? vimsottariList[currentIndex] : null;
-  const nextDashas = currentIndex !== -1 ? vimsottariList.slice(currentIndex + 1, currentIndex + 8) : [];
 
-  // 5. Yogas & Doshas
-  const yogas = Array.isArray(horoscope.yogas)
-    ? horoscope.yogas.map((y) => (typeof y === 'string' ? y : y.name || y.title))
-    : [];
-  const doshas = Array.isArray(horoscope.doshas)
-    ? horoscope.doshas.map((d) => (typeof d === 'string' ? d : d.name || d.title))
-    : [];
+  const upcomingDashas = [];
+  if (currentIndex !== -1) {
+    const seenAntardashas = new Set();
+    for (let i = currentIndex; i < vimsottariList.length && upcomingDashas.length < 9; i++) {
+      const [period, end] = vimsottariList[i];
+      const normalized = normalizePlanetName(period);
+      const [md, ad] = normalized.split('-');
+      const key = `${md}-${ad}`;
+      const nextEntry = vimsottariList[i + 1];
+      const nextNormalized = nextEntry ? normalizePlanetName(nextEntry[0]) : '';
+      if (!nextNormalized.startsWith(`${key}-`) && !seenAntardashas.has(key)) {
+        seenAntardashas.add(key);
+        upcomingDashas.push({ period: key, endsAt: end });
+      }
+    }
+  }
 
-  // 6. Jaimini Karakas (Atmakaraka, Amatyakaraka, Darakaraka)
+  // 4. Yogas & Doshas (Supports both object dictionaries from Vedic engine and arrays)
+  let yogas = [];
+  if (Array.isArray(horoscope.yogas)) {
+    yogas = horoscope.yogas.map((y) => (typeof y === 'string' ? stripHtmlTags(y) : y.name || y.title));
+  } else if (horoscope.yogas && typeof horoscope.yogas === 'object') {
+    const combinedYogaLists = {
+      ...(horoscope.yogas.raja_yoga_list || {}),
+      ...(horoscope.yogas.yoga_list || {})
+    };
+    yogas = Object.values(combinedYogaLists)
+      .map((val) => {
+        if (Array.isArray(val)) {
+          const chartTag = val[0] ? `[${val[0]}]` : '';
+          const yogaName = stripHtmlTags(val[1] || '');
+          const effect = stripHtmlTags(val[3] || val[2] || '');
+          return `${yogaName} ${chartTag}: ${effect}`.trim();
+        }
+        return typeof val === 'string' ? stripHtmlTags(val) : null;
+      })
+      .filter(Boolean);
+  }
+
+  let doshas = [];
+  if (Array.isArray(horoscope.doshas)) {
+    doshas = horoscope.doshas.map((d) => (typeof d === 'string' ? stripHtmlTags(d) : d.name || d.title));
+  } else if (horoscope.doshas && typeof horoscope.doshas === 'object') {
+    doshas = Object.entries(horoscope.doshas)
+      .map(([name, desc]) => `${name}: ${stripHtmlTags(desc)}`)
+      .filter(Boolean);
+  }
+
+  // 5. Jaimini Karakas (Atmakaraka, Amatyakaraka, Darakaraka)
   const charaKarakas = horoscope.chara_karakas || {};
 
   return {
@@ -94,9 +188,12 @@ export const extractAstrologicalSummary = (chartData, reportType = 'career') => 
     natalPlacements,
     d10Placements,
     d9Placements,
-    activeDasha: activeDasha ? { period: activeDasha[0], endsAt: activeDasha[1] } : null,
-    upcomingDashas: nextDashas.map(([p, end]) => ({ period: p, endsAt: end })),
-    yogas: yogas.slice(0, 10),
+    d2Placements,
+    activeDasha: activeDasha
+      ? { period: normalizePlanetName(activeDasha[0]), endsAt: activeDasha[1] }
+      : null,
+    upcomingDashas,
+    yogas: yogas.slice(0, 12),
     doshas: doshas.slice(0, 8),
     charaKarakas
   };
@@ -433,6 +530,7 @@ Report Slug: ${reportSlug}
 - Natal Placements (D-1): ${JSON.stringify(astroSummary.natalPlacements)}
 - Dasamsa (D-10 Career Chart): ${JSON.stringify(astroSummary.d10Placements)}
 - Navamsa (D-9 Marriage Chart): ${JSON.stringify(astroSummary.d9Placements)}
+- Hora (D-2 Wealth Chart): ${JSON.stringify(astroSummary.d2Placements || {})}
 - Active Dasha: ${JSON.stringify(astroSummary.activeDasha)}
 - Upcoming Dashas: ${JSON.stringify(astroSummary.upcomingDashas)}
 - Detected Yogas: ${JSON.stringify(astroSummary.yogas)}
