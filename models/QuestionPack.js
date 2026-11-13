@@ -82,4 +82,4 @@ export const QuestionPack = sequelize.define('QuestionPack', {
     { name: 'idx_question_packs_is_active', fields: ['is_active'] },
     { name: 'idx_question_packs_default_coupon', fields: ['default_coupon_id'] }
   ]
-});
+}); 
