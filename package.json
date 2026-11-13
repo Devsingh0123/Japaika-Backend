@@ -9,7 +9,8 @@
     "start": "node server.js",
     "question-pack": "node scripts/seedQuestionPacks.js",
     "coupons": "node scripts/seedCoupons.js",
-    "doshas": "node scripts/seedDoshas.js"
+    "doshas": "node scripts/seedDoshas.js",
+    "reviews": "node scripts/seedReviews.js"
   },
   "dependencies": {
     "@langchain/core": "^1.2.18",

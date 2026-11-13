@@ -14,6 +14,8 @@ import blogRoutes from './routes/blogRoutes.js';
 import faqRoutes from './routes/faqRoutes.js';
 import legalRoutes from './routes/legalRoutes.js';
 import doshaRoutes from './routes/doshaRoutes.js';
+import reviewRoutes from './routes/reviewRoutes.js';
+import { ensureDefaultReviews } from './services/reviewService.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 dotenv.config();
@@ -66,6 +68,7 @@ app.use('/api/v1/faqs', faqRoutes);
 app.use('/api/v1/legal-pages', legalRoutes);
 app.use('/api/v1/legal', legalRoutes);
 app.use('/api/v1/doshas', doshaRoutes);
+app.use('/api/v1/reviews', reviewRoutes);
 
 // Unhandled Route Handler
 app.all('*', (req, res) => {
@@ -82,6 +85,11 @@ const PORT = process.env.PORT || 5000;
 
 export const startServer = async (port = PORT) => {
   await connectDB();
+  try {
+    await ensureDefaultReviews();
+  } catch (err) {
+    console.error('Failed to seed initial reviews on startup:', err.message);
+  }
   return app.listen(port, () => {
     console.log(`Server running in ${process.env.NODE_ENV || 'development'} on port ${port}`);
   });

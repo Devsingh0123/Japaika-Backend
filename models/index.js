@@ -17,6 +17,7 @@ import { Admin } from './Admin.js';
 import { Faq } from './Faq.js';
 import { LegalPage } from './LegalPage.js';
 import { Dosha } from './Dosha.js';
+import { Review } from './Review.js';
 
 // User <-> Otp
 User.hasMany(Otp, { foreignKey: 'user_id', as: 'otps' });
@@ -78,6 +79,10 @@ Blog.belongsTo(Admin, { foreignKey: 'author_id', as: 'author' });
 QuestionPack.belongsTo(Coupon, { foreignKey: 'default_coupon_id', as: 'default_coupon' });
 Coupon.hasMany(QuestionPack, { foreignKey: 'default_coupon_id', as: 'question_packs' });
 
+// User <-> Review
+User.hasMany(Review, { foreignKey: 'user_id', as: 'reviews' });
+Review.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
 export {
   User,
   Admin,
@@ -97,7 +102,8 @@ export {
   Blog,
   Faq,
   LegalPage,
-  Dosha
+  Dosha,
+  Review
 };
 
 
